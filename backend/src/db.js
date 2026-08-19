@@ -1,7 +1,8 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, '..', 'kintree.db'));
+const dbPath = process.env.KINTREE_DB_PATH || path.join(__dirname, '..', 'kintree.db');
+const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -28,10 +29,16 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
     filename TEXT NOT NULL,
+    thumb_filename TEXT,
     caption TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+
+const photoColumns = db.prepare("PRAGMA table_info(photos)").all().map((c) => c.name);
+if (!photoColumns.includes('thumb_filename')) {
+  db.exec('ALTER TABLE photos ADD COLUMN thumb_filename TEXT');
+}
 
 const defaultCategories = [
   { name: 'Family', color: '#e0724a', sort_order: 0 },

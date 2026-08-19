@@ -1,13 +1,13 @@
 # KinTree
 
-A relationship chart for the people your son has met — grouped into categories
-(Family, Friends, or any others you add), each with photos.
+A relationship chart for the people around a central subject — grouped into
+categories (Family, Friends, or any others you add), each with photos.
 
 ## Stack
 
 - **Frontend:** React + TypeScript + Vite, Tailwind CSS. Renders the chart as
-  an SVG radial diagram: your son in the center, categories as the inner ring,
-  people as the outer ring, each with a circular photo.
+  an SVG radial diagram: the subject in the center, categories as the inner
+  ring, people as the outer ring, each with a circular photo.
 - **Backend:** Node.js + Express + SQLite (`better-sqlite3`), with `multer`
   handling photo uploads to `backend/uploads/`. This is the single source of
   truth — anyone hitting the server sees the same live data.

@@ -130,7 +130,7 @@ export default function KinTree({
             x={pl.point.x - PERSON_SIZE / 2}
             y={pl.point.y - PERSON_SIZE / 2 - 4}
             width={PERSON_SIZE}
-            height={PERSON_SIZE + 34}
+            height={PERSON_SIZE + (pl.person.relationship ? 54 : 34)}
           >
             <button
               onClick={() => onSelectPerson(pl.person)}
@@ -146,6 +146,11 @@ export default function KinTree({
               <span className="max-w-[90px] truncate rounded-full bg-white/90 px-2 py-0.5 text-xs font-medium text-ink shadow-sm">
                 {pl.person.name}
               </span>
+              {pl.person.relationship && (
+                <span className="max-w-[90px] truncate rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-ink-soft shadow-sm">
+                  {pl.person.relationship}
+                </span>
+              )}
             </button>
           </foreignObject>
         ))}

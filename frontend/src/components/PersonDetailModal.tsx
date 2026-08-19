@@ -21,7 +21,8 @@ export default function PersonDetailModal({
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [lightboxId, setLightboxId] = useState<number | null>(null);
+  const lightboxPhoto = person.photos.find((p) => p.id === lightboxId) ?? null;
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -44,6 +45,7 @@ export default function PersonDetailModal({
   };
 
   const removePhoto = async (photoId: number) => {
+    if (lightboxId === photoId) setLightboxId(null);
     await api.deletePhoto(photoId);
     await onChanged();
   };
@@ -102,10 +104,10 @@ export default function PersonDetailModal({
               {person.photos.map((photo) => (
                 <div key={photo.id} className="group relative aspect-square overflow-hidden rounded-lg bg-paper-dim">
                   <img
-                    src={`/uploads/${photo.filename}`}
+                    src={`/uploads/${photo.thumb_filename ?? photo.filename}`}
                     alt={photo.caption ?? person.name}
                     className="h-full w-full cursor-pointer object-cover transition-transform group-hover:scale-105"
-                    onClick={() => setLightbox(photo.filename)}
+                    onClick={() => setLightboxId(photo.id)}
                   />
                   <div className="absolute inset-x-0 bottom-0 flex justify-between gap-1 bg-gradient-to-t from-black/60 to-transparent p-1 opacity-0 transition-opacity group-hover:opacity-100">
                     <button
@@ -142,12 +144,37 @@ export default function PersonDetailModal({
         </div>
       </div>
 
-      {lightbox && (
+      {lightboxPhoto && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6"
-          onClick={() => setLightbox(null)}
+          onClick={() => setLightboxId(null)}
         >
-          <img src={`/uploads/${lightbox}`} className="max-h-full max-w-full rounded-lg object-contain" />
+          <div className="relative max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={`/uploads/${lightboxPhoto.filename}`}
+              className="max-h-[80vh] max-w-full rounded-lg object-contain"
+            />
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <button
+                onClick={() => setCover(lightboxPhoto.id)}
+                className="rounded-lg bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-white"
+              >
+                {person.cover_photo_id === lightboxPhoto.id ? '★ Cover photo' : 'Set as cover'}
+              </button>
+              <button
+                onClick={() => removePhoto(lightboxPhoto.id)}
+                className="rounded-lg bg-white/90 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-white"
+              >
+                Delete photo
+              </button>
+              <button
+                onClick={() => setLightboxId(null)}
+                className="rounded-lg bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-white"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </Modal>

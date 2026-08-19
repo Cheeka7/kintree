@@ -9,6 +9,7 @@ export interface Photo {
   id: number;
   person_id: number;
   filename: string;
+  thumb_filename: string | null;
   caption: string | null;
   created_at: string;
 }

@@ -26,7 +26,11 @@ export default function Avatar({
       style={{ width: size, height: size, border: `3px solid ${ringColor}` }}
     >
       {cover ? (
-        <img src={`/uploads/${cover.filename}`} alt={person.name} className="h-full w-full object-cover" />
+        <img
+          src={`/uploads/${cover.thumb_filename ?? cover.filename}`}
+          alt={person.name}
+          className="h-full w-full object-cover"
+        />
       ) : (
         <span
           className="font-display font-semibold text-ink-soft"

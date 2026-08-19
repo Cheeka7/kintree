@@ -4,9 +4,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const sharp = require('sharp');
 const db = require('./db');
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOADS_DIR = process.env.KINTREE_UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const app = express();
@@ -34,14 +35,40 @@ const upload = multer({
   },
 });
 
-const asyncHandler = (fn) => (req, res) => {
+const asyncHandler = (fn) => async (req, res) => {
   try {
-    fn(req, res);
+    await fn(req, res);
   } catch (err) {
     console.error(err);
     res.status(err.status || 500).json({ error: err.message || 'Server error' });
   }
 };
+
+const THUMB_SIZE = 320;
+
+async function generateThumbnail(filename) {
+  const ext = path.extname(filename);
+  const base = path.basename(filename, ext);
+  const thumbFilename = `${base}_thumb.webp`;
+  try {
+    await sharp(path.join(UPLOADS_DIR, filename))
+      .rotate()
+      .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover' })
+      .webp({ quality: 82 })
+      .toFile(path.join(UPLOADS_DIR, thumbFilename));
+    return thumbFilename;
+  } catch (err) {
+    console.error(`Thumbnail generation failed for ${filename}:`, err.message);
+    return null;
+  }
+}
+
+function unlinkPhotoFiles(photo) {
+  fs.unlink(path.join(UPLOADS_DIR, photo.filename), () => {});
+  if (photo.thumb_filename) {
+    fs.unlink(path.join(UPLOADS_DIR, photo.thumb_filename), () => {});
+  }
+}
 
 // ---------- Categories ----------
 
@@ -131,26 +158,26 @@ app.put('/api/people/:id', asyncHandler((req, res) => {
 }));
 
 app.delete('/api/people/:id', asyncHandler((req, res) => {
-  const photos = db.prepare('SELECT filename FROM photos WHERE person_id = ?').all(req.params.id);
+  const photos = db.prepare('SELECT filename, thumb_filename FROM photos WHERE person_id = ?').all(req.params.id);
   const info = db.prepare('DELETE FROM people WHERE id = ?').run(req.params.id);
   if (info.changes === 0) { res.status(404).json({ error: 'Person not found' }); return; }
-  for (const p of photos) {
-    fs.unlink(path.join(UPLOADS_DIR, p.filename), () => {});
-  }
+  for (const p of photos) unlinkPhotoFiles(p);
   res.status(204).end();
 }));
 
 // ---------- Photos ----------
 
-app.post('/api/people/:id/photos', upload.array('photos', 20), asyncHandler((req, res) => {
+app.post('/api/people/:id/photos', upload.array('photos', 20), asyncHandler(async (req, res) => {
   const person = db.prepare('SELECT * FROM people WHERE id = ?').get(req.params.id);
   if (!person) { res.status(404).json({ error: 'Person not found' }); return; }
   const files = req.files || [];
-  const insert = db.prepare('INSERT INTO photos (person_id, filename, caption) VALUES (?, ?, ?)');
-  const inserted = files.map((f) => {
-    const info = insert.run(req.params.id, f.filename, req.body.caption?.trim() || null);
-    return db.prepare('SELECT * FROM photos WHERE id = ?').get(info.lastInsertRowid);
-  });
+  const insert = db.prepare('INSERT INTO photos (person_id, filename, thumb_filename, caption) VALUES (?, ?, ?, ?)');
+  const inserted = [];
+  for (const f of files) {
+    const thumbFilename = await generateThumbnail(f.filename);
+    const info = insert.run(req.params.id, f.filename, thumbFilename, req.body.caption?.trim() || null);
+    inserted.push(db.prepare('SELECT * FROM photos WHERE id = ?').get(info.lastInsertRowid));
+  }
   res.status(201).json(inserted);
 }));
 
@@ -165,7 +192,11 @@ app.delete('/api/photos/:id', asyncHandler((req, res) => {
   const photo = db.prepare('SELECT * FROM photos WHERE id = ?').get(req.params.id);
   if (!photo) { res.status(404).json({ error: 'Photo not found' }); return; }
   db.prepare('DELETE FROM photos WHERE id = ?').run(req.params.id);
-  fs.unlink(path.join(UPLOADS_DIR, photo.filename), () => {});
+  db.prepare('UPDATE people SET cover_photo_id = NULL WHERE id = ? AND cover_photo_id = ?').run(
+    photo.person_id,
+    photo.id
+  );
+  unlinkPhotoFiles(photo);
   res.status(204).end();
 }));
 
@@ -183,6 +214,10 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`KinTree API listening on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`KinTree API listening on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
