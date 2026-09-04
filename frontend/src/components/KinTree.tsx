@@ -25,6 +25,20 @@ export default function KinTree({
   const categoryLayouts = useMemo(() => layoutCategories(categories), [categories]);
   const personLayouts = useMemo(() => layoutPeople(categoryLayouts, people), [categoryLayouts, people]);
   const bounds = useMemo(() => chartBounds(personLayouts), [personLayouts]);
+  const pointById = useMemo(() => new Map(personLayouts.map((pl) => [pl.person.id, pl.point])), [personLayouts]);
+
+  const linkPairs = useMemo(() => {
+    const pairs: { key: string; from: (typeof personLayouts)[number]['point']; to: (typeof personLayouts)[number]['point'] }[] = [];
+    for (const pl of personLayouts) {
+      for (const link of pl.person.links) {
+        if (link.id < pl.person.id) continue; // draw each pair once
+        const to = pointById.get(link.id);
+        if (!to) continue;
+        pairs.push({ key: `${pl.person.id}-${link.id}`, from: pl.point, to });
+      }
+    }
+    return pairs;
+  }, [personLayouts, pointById]);
 
   if (categories.length === 0) {
     return (
@@ -55,15 +69,17 @@ export default function KinTree({
           />
         ))}
 
-        {/* lines: category -> person */}
+        {/* lines: category -> person (people with no category orbit a link instead, see below) */}
         {personLayouts.map((pl) => {
+          if (pl.person.category_id == null) return null;
           const cat = categories.find((c) => c.id === pl.person.category_id);
           const catPoint = categoryLayouts.find((cl) => cl.category.id === pl.person.category_id)?.point;
+          if (!catPoint) return null;
           return (
             <line
               key={`line-person-${pl.person.id}`}
-              x1={catPoint?.x}
-              y1={catPoint?.y}
+              x1={catPoint.x}
+              y1={catPoint.y}
               x2={pl.point.x}
               y2={pl.point.y}
               stroke={cat?.color ?? '#ccc'}
@@ -72,6 +88,21 @@ export default function KinTree({
             />
           );
         })}
+
+        {/* lines: person <-> linked person */}
+        {linkPairs.map((pair) => (
+          <line
+            key={`line-link-${pair.key}`}
+            x1={pair.from.x}
+            y1={pair.from.y}
+            x2={pair.to.x}
+            y2={pair.to.y}
+            stroke="#7a7ac1"
+            strokeWidth={1.5}
+            strokeDasharray="5 4"
+            strokeOpacity={0.6}
+          />
+        ))}
 
         {/* center node */}
         <foreignObject

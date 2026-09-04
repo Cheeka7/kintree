@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { createTestServer, TINY_PNG } = require('./helpers/setup');
 
 let ctx;
+let base;
 let familyId;
 
 test.before(() => {
@@ -11,14 +12,15 @@ test.before(() => {
 
 test.beforeEach(async () => {
   ctx.resetDb();
-  const categories = await (await fetch(`${ctx.baseUrl}/api/categories`)).json();
+  ({ base } = await ctx.createKin());
+  const categories = await (await fetch(`${base}/categories`)).json();
   familyId = categories.find((c) => c.name === 'Family').id;
 });
 
 test.after(() => ctx.close());
 
 const createPerson = async (name) => {
-  const res = await fetch(`${ctx.baseUrl}/api/people`, {
+  const res = await fetch(`${base}/people`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, category_id: familyId }),
@@ -29,7 +31,7 @@ const createPerson = async (name) => {
 const uploadPng = (personId, filename = 'photo.png') => {
   const form = new FormData();
   form.append('photos', new Blob([TINY_PNG], { type: 'image/png' }), filename);
-  return fetch(`${ctx.baseUrl}/api/people/${personId}/photos`, { method: 'POST', body: form });
+  return fetch(`${base}/people/${personId}/photos`, { method: 'POST', body: form });
 };
 
 test('POST /api/people/:id/photos on a missing person returns 404', async () => {
@@ -54,7 +56,7 @@ test('POST /api/people/:id/photos rejects a disallowed file type with a 4xx, not
   const form = new FormData();
   form.append('photos', new Blob([Buffer.from('not an image')], { type: 'text/plain' }), 'notes.txt');
 
-  const res = await fetch(`${ctx.baseUrl}/api/people/${person.id}/photos`, { method: 'POST', body: form });
+  const res = await fetch(`${base}/people/${person.id}/photos`, { method: 'POST', body: form });
 
   assert.ok(res.status >= 400 && res.status < 500, `expected a 4xx validation error, got ${res.status}`);
 });
@@ -63,7 +65,7 @@ test('PUT /api/photos/:id updates the caption', async () => {
   const person = await createPerson('Jade');
   const [photo] = await (await uploadPng(person.id)).json();
 
-  const res = await fetch(`${ctx.baseUrl}/api/photos/${photo.id}`, {
+  const res = await fetch(`${base}/photos/${photo.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caption: 'Birthday party' }),
@@ -74,7 +76,7 @@ test('PUT /api/photos/:id updates the caption', async () => {
 });
 
 test('PUT /api/photos/:id on a missing id returns 404', async () => {
-  const res = await fetch(`${ctx.baseUrl}/api/photos/999999`, {
+  const res = await fetch(`${base}/photos/999999`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caption: 'x' }),
@@ -86,16 +88,16 @@ test('DELETE /api/photos/:id clears cover_photo_id when the deleted photo was th
   const person = await createPerson('Kabir');
   const [photo] = await (await uploadPng(person.id)).json();
 
-  await fetch(`${ctx.baseUrl}/api/people/${person.id}`, {
+  await fetch(`${base}/people/${person.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cover_photo_id: photo.id }),
   });
 
-  const del = await fetch(`${ctx.baseUrl}/api/photos/${photo.id}`, { method: 'DELETE' });
+  const del = await fetch(`${base}/photos/${photo.id}`, { method: 'DELETE' });
   assert.equal(del.status, 204);
 
-  const updated = await (await fetch(`${ctx.baseUrl}/api/people/${person.id}`)).json();
+  const updated = await (await fetch(`${base}/people/${person.id}`)).json();
   assert.equal(updated.cover_photo_id, null);
 });
 
@@ -103,9 +105,9 @@ test('DELETE /api/people/:id cascades to delete their photos', async () => {
   const person = await createPerson('Leah');
   const [photo] = await (await uploadPng(person.id)).json();
 
-  await fetch(`${ctx.baseUrl}/api/people/${person.id}`, { method: 'DELETE' });
+  await fetch(`${base}/people/${person.id}`, { method: 'DELETE' });
 
-  const res = await fetch(`${ctx.baseUrl}/api/photos/${photo.id}`, {
+  const res = await fetch(`${base}/photos/${photo.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caption: 'still there?' }),
@@ -114,6 +116,19 @@ test('DELETE /api/people/:id cascades to delete their photos', async () => {
 });
 
 test('DELETE /api/photos/:id on a missing id returns 404', async () => {
-  const res = await fetch(`${ctx.baseUrl}/api/photos/999999`, { method: 'DELETE' });
+  const res = await fetch(`${base}/photos/999999`, { method: 'DELETE' });
+  assert.equal(res.status, 404);
+});
+
+test('a photo belonging to another kin cannot be updated through this kin', async () => {
+  const person = await createPerson('Mira');
+  const [photo] = await (await uploadPng(person.id)).json();
+
+  const other = await ctx.createKin();
+  const res = await fetch(`${other.base}/photos/${photo.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caption: 'hijacked' }),
+  });
   assert.equal(res.status, 404);
 });

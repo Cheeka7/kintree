@@ -1,23 +1,65 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import type { Category, Person } from './types';
-import { api } from './api';
+import { createApi, kinsApi } from './api';
 import KinTree from './components/KinTree';
 import PersonDetailModal from './components/PersonDetailModal';
 import PersonFormModal from './components/PersonFormModal';
 import CategoryModal from './components/CategoryModal';
 import ConfirmDialog from './components/ConfirmDialog';
+import KinGateModal from './components/KinGateModal';
 
-type PersonFormState = { mode: 'add' | 'edit'; defaultCategoryId?: number; person?: Person };
+const KIN_CODE_KEY = 'kintree-kin-code';
+
+type PersonFormState = { mode: 'add' | 'edit'; defaultCategoryId?: number; person?: Person; linkToPersonId?: number };
 type CategoryFormState = { category: Category | null };
 type ConfirmState = { title: string; message: string; onConfirm: () => Promise<void> | void };
 
 export default function App() {
+  const [kinCode, setKinCode] = useState<string | null>(null);
+  const [checkingStoredCode, setCheckingStoredCode] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const stored = localStorage.getItem(KIN_CODE_KEY);
+      if (stored) {
+        const ok = await kinsApi.exists(stored).catch(() => false);
+        if (ok) {
+          setKinCode(stored);
+        } else {
+          localStorage.removeItem(KIN_CODE_KEY);
+        }
+      }
+      setCheckingStoredCode(false);
+    })();
+  }, []);
+
+  const goToKin = (code: string) => {
+    localStorage.setItem(KIN_CODE_KEY, code);
+    setKinCode(code);
+  };
+
+  if (checkingStoredCode) {
+    return <div className="flex h-screen items-center justify-center text-ink-soft">Loading KinTree…</div>;
+  }
+
+  if (!kinCode) {
+    return <KinGateModal onResolved={goToKin} />;
+  }
+
+  return <KinTreeApp key={kinCode} kinCode={kinCode} onSwitchKin={goToKin} />;
+}
+
+function KinTreeApp({ kinCode, onSwitchKin }: { kinCode: string; onSwitchKin: (code: string) => void }) {
+  const [switchingKin, setSwitchingKin] = useState(false);
+  const api = useMemo(() => createApi(kinCode), [kinCode]);
+  const centerNameKey = `kintree-center-name-${kinCode}`;
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [centerName, setCenterName] = useState(() => localStorage.getItem('kintree-center-name') || 'My Son');
+  const [centerName, setCenterName] = useState(() => localStorage.getItem(centerNameKey) || 'My Son');
   const [editingName, setEditingName] = useState(false);
 
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
@@ -29,7 +71,7 @@ export default function App() {
     const [cats, ppl] = await Promise.all([api.getCategories(), api.getPeople()]);
     setCategories(cats);
     setPeople(ppl);
-  }, []);
+  }, [api]);
 
   useEffect(() => {
     (async () => {
@@ -44,18 +86,21 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    localStorage.setItem('kintree-center-name', centerName);
-  }, [centerName]);
+    localStorage.setItem(centerNameKey, centerName);
+  }, [centerNameKey, centerName]);
 
   const selectedPerson = people.find((p) => p.id === selectedPersonId) ?? null;
 
-  const handleAddPerson = async (data: { name: string; category_id: number; relationship: string; notes: string }) => {
+  const handleAddPerson = async (data: { name: string; category_id: number | null; relationship: string; notes: string }) => {
     const created = await api.createPerson(data);
+    if (personForm?.linkToPersonId) {
+      await api.addPersonLink(created.id, personForm.linkToPersonId);
+    }
     await refresh();
     setSelectedPersonId(created.id);
   };
 
-  const handleEditPerson = async (data: { name: string; category_id: number; relationship: string; notes: string }) => {
+  const handleEditPerson = async (data: { name: string; category_id: number | null; relationship: string; notes: string }) => {
     if (!personForm?.person) return;
     await api.updatePerson(personForm.person.id, data);
     await refresh();
@@ -147,7 +192,16 @@ export default function App() {
             )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="px-1 text-xs text-ink-soft" title="Kin code for this chart">
+            Kin: {kinCode}
+          </span>
+          <button
+            onClick={() => setSwitchingKin(true)}
+            className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-paper-dim"
+          >
+            Switch Kin
+          </button>
           <button
             onClick={() => setCategoryForm({ category: null })}
             className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-paper-dim"
@@ -179,10 +233,14 @@ export default function App() {
         <PersonDetailModal
           person={selectedPerson}
           category={categories.find((c) => c.id === selectedPerson.category_id)}
+          people={people}
+          api={api}
           onClose={() => setSelectedPersonId(null)}
           onChanged={refresh}
           onEdit={() => setPersonForm({ mode: 'edit', person: selectedPerson })}
           onDelete={() => handleDeletePerson(selectedPerson)}
+          onNavigateToPerson={(id) => setSelectedPersonId(id)}
+          onAddLinkedPerson={() => setPersonForm({ mode: 'add', linkToPersonId: selectedPerson.id })}
         />
       )}
 
@@ -191,6 +249,7 @@ export default function App() {
           person={personForm.person ?? null}
           categories={categories}
           defaultCategoryId={personForm.defaultCategoryId}
+          hideCategory={personForm.mode === 'add' && !!personForm.linkToPersonId}
           onClose={() => setPersonForm(null)}
           onSave={personForm.mode === 'add' ? handleAddPerson : handleEditPerson}
         />
@@ -212,6 +271,16 @@ export default function App() {
           message={confirm.message}
           onCancel={() => setConfirm(null)}
           onConfirm={confirm.onConfirm}
+        />
+      )}
+
+      {switchingKin && (
+        <KinGateModal
+          onResolved={(code) => {
+            setSwitchingKin(false);
+            onSwitchKin(code);
+          }}
+          onCancel={() => setSwitchingKin(false)}
         />
       )}
     </div>

@@ -5,6 +5,7 @@ import {
   CATEGORY_RADIUS,
   PERSON_BASE_RADIUS,
   PERSON_RING_GAP,
+  SATELLITE_RADIUS,
   chartBounds,
   layoutCategories,
   layoutPeople,
@@ -14,7 +15,7 @@ function makeCategory(id: number, sort_order = id): Category {
   return { id, name: `Cat ${id}`, color: '#000000', sort_order };
 }
 
-function makePerson(id: number, category_id: number, overrides: Partial<Person> = {}): Person {
+function makePerson(id: number, category_id: number | null, overrides: Partial<Person> = {}): Person {
   return {
     id,
     name: `Person ${id}`,
@@ -24,9 +25,12 @@ function makePerson(id: number, category_id: number, overrides: Partial<Person> 
     cover_photo_id: null,
     created_at: '',
     photos: [],
+    links: [],
     ...overrides,
   };
 }
+
+const linkedTo = (...people: Person[]) => people.map((p) => ({ id: p.id, name: p.name }));
 
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -123,6 +127,64 @@ describe('layoutPeople', () => {
     const personLayouts = layoutPeople(categoryLayouts, people);
     const keys = personLayouts.map((pl) => `${pl.point.x.toFixed(2)},${pl.point.y.toFixed(2)}`);
     expect(new Set(keys).size).toBe(people.length);
+  });
+});
+
+describe('layoutPeople — people with no category (added only as a link)', () => {
+  it('orbits a link-only person near the categorized person they are linked to', () => {
+    const categories = [makeCategory(1)];
+    const categoryLayouts = layoutCategories(categories);
+    const anchor = makePerson(1, 1);
+    const satellite = makePerson(2, null, { links: linkedTo(anchor) });
+    anchor.links = linkedTo(satellite);
+
+    const personLayouts = layoutPeople(categoryLayouts, [anchor, satellite]);
+    expect(personLayouts).toHaveLength(2);
+
+    const anchorLayout = personLayouts.find((pl) => pl.person.id === anchor.id)!;
+    const satelliteLayout = personLayouts.find((pl) => pl.person.id === satellite.id)!;
+    expect(dist(satelliteLayout.point, anchorLayout.point)).toBeCloseTo(SATELLITE_RADIUS, 5);
+  });
+
+  it('resolves a chain of link-only people back to a categorized anchor', () => {
+    const categories = [makeCategory(1)];
+    const categoryLayouts = layoutCategories(categories);
+    const anchor = makePerson(1, 1);
+    const middle = makePerson(2, null);
+    const tip = makePerson(3, null);
+    anchor.links = linkedTo(middle);
+    middle.links = linkedTo(anchor, tip);
+    tip.links = linkedTo(middle);
+
+    const personLayouts = layoutPeople(categoryLayouts, [anchor, middle, tip]);
+    expect(personLayouts).toHaveLength(3);
+    expect(personLayouts.every((pl) => Number.isFinite(pl.point.x) && Number.isFinite(pl.point.y))).toBe(true);
+  });
+
+  it('still places link-only people that never connect back to a categorized person', () => {
+    const categories = [makeCategory(1)];
+    const categoryLayouts = layoutCategories(categories);
+    const isolatedA = makePerson(1, null);
+    const isolatedB = makePerson(2, null);
+    isolatedA.links = linkedTo(isolatedB);
+    isolatedB.links = linkedTo(isolatedA);
+
+    const personLayouts = layoutPeople(categoryLayouts, [isolatedA, isolatedB]);
+    expect(personLayouts).toHaveLength(2);
+    expect(personLayouts.every((pl) => Number.isFinite(pl.point.x) && Number.isFinite(pl.point.y))).toBe(true);
+  });
+
+  it('gives multiple satellites of the same anchor distinct positions', () => {
+    const categories = [makeCategory(1)];
+    const categoryLayouts = layoutCategories(categories);
+    const anchor = makePerson(1, 1);
+    const satellites = [makePerson(2, null), makePerson(3, null), makePerson(4, null)];
+    anchor.links = linkedTo(...satellites);
+    for (const s of satellites) s.links = linkedTo(anchor);
+
+    const personLayouts = layoutPeople(categoryLayouts, [anchor, ...satellites]);
+    const keys = personLayouts.map((pl) => `${pl.point.x.toFixed(2)},${pl.point.y.toFixed(2)}`);
+    expect(new Set(keys).size).toBe(personLayouts.length);
   });
 });
 

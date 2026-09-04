@@ -1,28 +1,64 @@
 import { useRef, useState } from 'react';
 import type { Category, Person } from '../types';
-import { api } from '../api';
+import type { Api } from '../api';
 import Modal from './Modal';
 
 export default function PersonDetailModal({
   person,
   category,
+  people,
+  api,
   onClose,
   onChanged,
   onEdit,
   onDelete,
+  onNavigateToPerson,
+  onAddLinkedPerson,
 }: {
   person: Person;
   category: Category | undefined;
+  people: Person[];
+  api: Api;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onEdit: () => void;
   onDelete: () => void;
+  onNavigateToPerson: (id: number) => void;
+  onAddLinkedPerson: () => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxId, setLightboxId] = useState<number | null>(null);
+  const [linkPickerId, setLinkPickerId] = useState('');
+  const [linkError, setLinkError] = useState<string | null>(null);
   const lightboxPhoto = person.photos.find((p) => p.id === lightboxId) ?? null;
+
+  const linkablePeople = people.filter(
+    (p) => p.id !== person.id && !person.links.some((l) => l.id === p.id)
+  );
+
+  const addLink = async (linkedId: number) => {
+    setLinkError(null);
+    try {
+      await api.addPersonLink(person.id, linkedId);
+      await onChanged();
+    } catch (e) {
+      setLinkError(e instanceof Error ? e.message : 'Failed to add link');
+    } finally {
+      setLinkPickerId('');
+    }
+  };
+
+  const removeLink = async (linkedId: number) => {
+    setLinkError(null);
+    try {
+      await api.removePersonLink(person.id, linkedId);
+      await onChanged();
+    } catch (e) {
+      setLinkError(e instanceof Error ? e.message : 'Failed to remove link');
+    }
+  };
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -70,6 +106,52 @@ export default function PersonDetailModal({
         </div>
 
         {person.notes && <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{person.notes}</p>}
+
+        <div>
+          <h3 className="mb-2 font-display text-sm font-semibold text-ink-soft">Linked people</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            {person.links.map((link) => (
+              <span
+                key={link.id}
+                className="flex items-center gap-1.5 rounded-full border border-line bg-paper-dim py-1 pl-3 pr-1.5 text-xs font-medium text-ink"
+              >
+                <button onClick={() => onNavigateToPerson(link.id)} className="hover:underline">
+                  {link.name}
+                </button>
+                <button
+                  onClick={() => removeLink(link.id)}
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-ink-soft hover:bg-line hover:text-ink"
+                  title={`Remove link to ${link.name}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+
+            {linkablePeople.length > 0 && (
+              <select
+                value={linkPickerId}
+                onChange={(e) => e.target.value && addLink(Number(e.target.value))}
+                className="rounded-full border border-dashed border-line bg-transparent px-3 py-1 text-xs font-medium text-ink-soft outline-none hover:border-accent"
+              >
+                <option value="">+ Link person…</option>
+                {linkablePeople.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={onAddLinkedPerson}
+              className="rounded-full border border-dashed border-line px-3 py-1 text-xs font-medium text-ink-soft hover:border-accent hover:text-ink"
+            >
+              + New person…
+            </button>
+          </div>
+          {linkError && <p className="mt-1.5 text-xs text-red-600">{linkError}</p>}
+        </div>
 
         <div>
           <div className="mb-2 flex items-center justify-between">

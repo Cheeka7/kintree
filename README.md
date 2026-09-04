@@ -39,6 +39,14 @@ This builds the frontend and serves it directly from the Express server on
 port 4000 (`PORT` env var to change it), so anyone who can reach that
 machine's IP — e.g. `http://<your-ip>:4000` — sees the same data.
 
+## Kin codes
+
+Each chart lives behind a 6-digit kin code, so the server can host many
+independent charts without them seeing each other's data. On first visit,
+create a new kin to get a fresh code (save it — it's the only way back in) or
+enter an existing one to open that chart. Share a code with someone else and
+they see and edit the same live chart.
+
 ## Data
 
 - SQLite database: `backend/kintree.db`

@@ -22,10 +22,13 @@ function createTestServer() {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   const resetDb = () => {
-    db.exec('DELETE FROM photos; DELETE FROM people; DELETE FROM categories;');
-    const insert = db.prepare('INSERT INTO categories (name, color, sort_order) VALUES (?, ?, ?)');
-    insert.run('Family', '#e0724a', 0);
-    insert.run('Friends', '#4a90a4', 1);
+    db.exec('DELETE FROM person_links; DELETE FROM photos; DELETE FROM people; DELETE FROM categories; DELETE FROM kins;');
+  };
+
+  const createKin = async () => {
+    const res = await fetch(`${baseUrl}/api/kins`, { method: 'POST' });
+    const { code } = await res.json();
+    return { code, base: `${baseUrl}/api/kins/${code}` };
   };
 
   const close = () =>
@@ -37,7 +40,7 @@ function createTestServer() {
       });
     });
 
-  return { baseUrl, db, resetDb, close };
+  return { baseUrl, db, resetDb, createKin, close };
 }
 
 const json = (res) => res.json();

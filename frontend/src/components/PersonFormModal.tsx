@@ -6,18 +6,20 @@ export default function PersonFormModal({
   person,
   categories,
   defaultCategoryId,
+  hideCategory = false,
   onClose,
   onSave,
 }: {
   person: Person | null;
   categories: Category[];
   defaultCategoryId?: number;
+  hideCategory?: boolean;
   onClose: () => void;
-  onSave: (data: { name: string; category_id: number; relationship: string; notes: string }) => Promise<void>;
+  onSave: (data: { name: string; category_id: number | null; relationship: string; notes: string }) => Promise<void>;
 }) {
   const [name, setName] = useState(person?.name ?? '');
-  const [categoryId, setCategoryId] = useState<number>(
-    person?.category_id ?? defaultCategoryId ?? categories[0]?.id
+  const [categoryId, setCategoryId] = useState<number | null>(
+    person?.category_id ?? defaultCategoryId ?? (hideCategory ? null : categories[0]?.id ?? null)
   );
   const [relationship, setRelationship] = useState(person?.relationship ?? '');
   const [notes, setNotes] = useState(person?.notes ?? '');
@@ -29,14 +31,10 @@ export default function PersonFormModal({
       setError('Name is required');
       return;
     }
-    if (!categoryId) {
-      setError('Choose a category');
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
-      await onSave({ name: name.trim(), category_id: categoryId, relationship, notes });
+      await onSave({ name: name.trim(), category_id: hideCategory ? null : categoryId, relationship, notes });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -59,20 +57,23 @@ export default function PersonFormModal({
           />
         </label>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-ink-soft">Category</span>
-          <select
-            className="rounded-lg border border-line bg-white px-3 py-2 outline-none focus:border-accent"
-            value={categoryId}
-            onChange={(e) => setCategoryId(Number(e.target.value))}
-          >
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!hideCategory && (
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-ink-soft">Category</span>
+            <select
+              className="rounded-lg border border-line bg-white px-3 py-2 outline-none focus:border-accent"
+              value={categoryId ?? ''}
+              onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">No category</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium text-ink-soft">Relationship</span>
